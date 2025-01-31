@@ -17,7 +17,7 @@ import ast
 #desired x and y lengths in mm (CHANGE ACCORDINGLY)
 desired_length = 420
 desired_width= 280
-desired_step_size = 20
+desired_step_size = 50
 integration_time = .5
 
 #gpio configuration
@@ -56,7 +56,7 @@ y_pos = 0
 data= [["integrated intensity", "x", "y"]]
 row_data =[]
 devices = sb.list_devices()
-filename = "uniformity_test.csv"
+filename = "uniformity_test1.csv"
 
 
 def ocean_test(x,y):
@@ -112,7 +112,7 @@ def return_to_origin():
         save_position(x_pos, y_pos)  # Save position after each move
 
     while y_pos > 0:
-        motor2.motor_go(False, "Full", y_step, step_delay, True, .05)
+        motor2.motor_go(True, "Full", y_step, step_delay, True, .05)
         y_pos -= desired_step_size
         print(f"Moving motor2: y_pos={y_pos}")
         save_position(x_pos, y_pos)  # Save position after each move
@@ -120,8 +120,12 @@ def return_to_origin():
     print("Returned to origin and saved position (0, 0).")
 
 
-def bleh(x_pos, y_pos):
+def run_test(x_pos, y_pos):
         global row_data, data
+        local_data = ocean_test(x_pos, y_pos)  # Test and save data at the current position
+        sleep(integration_time)
+        save_position(x_pos, y_pos)
+        row_data.append(local_data)      
         for y in range(0, y_steps):  # Loop over Y direction (Width)
             move_right = (y % 2 == 0)  # Move in a zigzag pattern for X movement
             for x in range(0, x_steps):  # Loop over X direction (Length)
@@ -141,7 +145,10 @@ def bleh(x_pos, y_pos):
             row_data=[]
             motor2.motor_go(False, "Full", y_step, step_delay, True, .05)
             y_pos += desired_step_size  # Update Y position
+            local_data = ocean_test(x_pos, y_pos)
+            sleep(integration_time)
             save_position(x_pos, y_pos)
+            row_data.append(local_data)
         
         print(data)
 
@@ -181,7 +188,7 @@ def go_to (x_goal,y_goal): #brings carriage to goal location
                       
 
 def export_snake_grid():
-    filename = "uniformity_test.csv"
+    filename = "uniformity_test1.csv"
     df = pd.read_csv(filename)
     
     # Print the dataframe to see how it is structured
@@ -218,4 +225,5 @@ def export_snake_grid():
 # displaying the plotted heatmap 
     plt.show()
     # Call the function to export and generate the heatmap
-bleh(0,0)
+run_test(0,0)
+return_to_origin()
