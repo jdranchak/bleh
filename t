@@ -11,12 +11,14 @@ import math
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from time import sleep
+import ast
  # <-- Add this import
 #desired x and y lengths in mm (CHANGE ACCORDINGLY)
 desired_length = 420
 desired_width= 280
 desired_step_size = 20
-integration_time = 1
+integration_time = .5
 
 #gpio configuration
 direction2=17
@@ -52,6 +54,7 @@ y_pos = 0
 
 #ocean optics data setup
 data= [["integrated intensity", "x", "y"]]
+row_data =[]
 devices = sb.list_devices()
 filename = "uniformity_test.csv"
 
@@ -63,9 +66,8 @@ def ocean_test(x,y):
     wavelengths = spec.wavelengths()
     intensities = spec.intensities()
     integrated_intensity = np.trapezoid(intensities, wavelengths)
-    local_data = [integrated_intensity, x, y ]
-    print(local_data)
-    data.append(local_data)
+    local_data = [integrated_intensity, x, y]
+    return local_data
 
 def load_position():
     global x_pos, y_pos
@@ -119,6 +121,7 @@ def return_to_origin():
 
 
 def bleh(x_pos, y_pos):
+        global row_data, data
         for y in range(0, y_steps):  # Loop over Y direction (Width)
             move_right = (y % 2 == 0)  # Move in a zigzag pattern for X movement
             for x in range(0, x_steps):  # Loop over X direction (Length)
@@ -126,18 +129,27 @@ def bleh(x_pos, y_pos):
                 motor1.motor_go(move_right, "Full", x_step, step_delay, True, .05)
                 x_pos = x_pos + desired_step_size if move_right else x_pos - desired_step_size  # Update X position
                 motor1.motor_stop()
-                ocean_test(x_pos, y_pos)  # Test and save data at the current position
+                local_data = ocean_test(x_pos, y_pos)  # Test and save data at the current position
                 sleep(integration_time)
                 save_position(x_pos, y_pos)
+                row_data.append(local_data)
 
         # Move motor2 along the y-axis (Width direction)
+            if not move_right:
+                row_data.reverse()
+            data.append(row_data)
+            row_data=[]
             motor2.motor_go(False, "Full", y_step, step_delay, True, .05)
             y_pos += desired_step_size  # Update Y position
             save_position(x_pos, y_pos)
+        
+        print(data)
 
         with open(filename, 'w', newline='') as csvfile:
             csvwriter =csv.writer(csvfile)
             csvwriter.writerows(data)
+            
+        export_snake_grid()
         
 def go_to (x_goal,y_goal): #brings carriage to goal location
     x_pos, y_pos = load_position()
@@ -167,69 +179,43 @@ def go_to (x_goal,y_goal): #brings carriage to goal location
         print(f"Moving motor2: y_pos={y_pos}")
         save_position(x_pos, y_pos)
                       
-def graph():
-    filename = 'uniformity_test.csv'
+
+def export_snake_grid():
+    filename = "uniformity_test.csv"
     df = pd.read_csv(filename)
+    
+    # Print the dataframe to see how it is structured
+    print("CSV Data:")
+    print(df)
+    fields = []
+    rows = []
+    parsed_data = []
+    row_data = []
+    # reading csv file
+    with open(filename, 'r') as csvfile:
+        # creating a csv reader object
+        csvreader = csv.reader(csvfile)
 
-    # Ensure 'x' and 'y' are integers, and check for any missing or invalid values
-    df['x'] = pd.to_numeric(df['x'], errors='coerce').fillna(0).astype(int)
-    df['y'] = pd.to_numeric(df['y'], errors='coerce').fillna(0).astype(int)
-    df['integrated intensity'] = pd.to_numeric(df['integrated intensity'], errors='coerce').fillna(0)
+        # extracting field names through first row
+        fields = next(csvreader)
 
-    # Debugging print: check the unique values of 'x' and 'y'
-    print(f"Unique x values: {df['x'].unique()}")
-    print(f"Unique y values: {df['y'].unique()}")
+        # extracting each data row one by one
+        for row in csvreader:
+            rows.append(row)
 
-    x_max = df['x'].max()
-    y_max = df['y'].max()
-
-    # Create an empty grid (initialized to NaN)
-    grid = np.full((y_max + 1, x_max + 1), np.nan)
-
-    # Fill the grid with intensity values at corresponding (x, y) positions
-    for _, row in df.iterrows():
-        x = int(row['x'])
-        y = int(row['y'])
-        intensity = row['integrated intensity']
-
-        # Ensure that intensity is not NaN before assigning
-        if 0 <= x <= x_max and 0 <= y <= y_max:
-            grid[y, x] = intensity
-
-    # Replace NaN values with 0 (or another small value) for plotting
-    grid = np.nan_to_num(grid, nan=0)
-
-    # Calculate the mean intensity of the grid
-    mean_intensity = np.mean(grid)
-
-    # Calculate the percent difference from the average for each value
-    grid_percent_diff = np.abs(grid - mean_intensity) / mean_intensity * 100
-
-    # Debugging: Check grid after populating and calculating percent differences
-    print(f"Populated grid (percent differences):\n{grid_percent_diff}")
-
-    # Normalize the percent difference values for better visualization
-    min_diff = np.min(grid_percent_diff)
-    max_diff = np.max(grid_percent_diff)
-
-    grid_normalized = (grid_percent_diff - min_diff) / (max_diff - min_diff)
-
-    # Debugging: Check normalized grid
-    print(f"Normalized grid (percent differences):\n{grid_normalized}")
-
-    # Plotting the heatmap
-    plt.figure(figsize=(10, 8))  # Set the size of the plot
-    sns.heatmap(grid_normalized, cmap="viridis", annot=False, cbar=True)
-
-    # Add labels and a title
-    plt.xlabel('X Position (mm)')
-    plt.ylabel('Y Position (mm)')
-    plt.title('Spectral Intensity Heatmap (Percent Difference from Average)')
-
-    # Save the plot as a PNG image
-    plt.savefig('heatmap.png')
-
-    # Show the plot
-    plt.show(block=True)
-    print("done")
-graph()
+    for row1 in rows:
+        for item in row1:
+            row_data.append(float(item[item.find("(") + 1:item.find(")")]))
+            
+        print(row_data)
+        parsed_data.append(row_data)
+        row_data = []
+            
+        
+    print(parsed_data)
+    hm = sns.heatmap(data = parsed_data) 
+  
+# displaying the plotted heatmap 
+    plt.show()
+    # Call the function to export and generate the heatmap
+bleh(0,0)
